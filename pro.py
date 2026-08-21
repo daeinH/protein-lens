@@ -9,7 +9,7 @@ import json
 import re
 
 # ---------------------------------------------------------
-# 1. 앱 기본 설정, 세션 및 자동 로그인 초기화
+# 1. 앱 기본 설정 및 세션 초기화
 # ---------------------------------------------------------
 st.set_page_config(page_title="Protein Lens", page_icon="🥗", layout="wide")
 
@@ -20,11 +20,40 @@ if 'username' not in st.session_state:
 if 'selected_date' not in st.session_state:
     st.session_state['selected_date'] = None
 
-# URL 쿼리 파라미터를 통한 자동 로그인 검사
+# --- 허용 날짜 계산 함수 ---
+def get_allowed_dates():
+    KST = datetime.timezone(datetime.timedelta(hours=9))
+    now = datetime.datetime.now(KST)
+    today_str = now.strftime("%Y-%m-%d")
+    yesterday_str = (now - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+    
+    allowed_dates = [today_str]
+    if now.hour < 3:
+        allowed_dates.append(yesterday_str)
+    return allowed_dates
+
+# --- 브라우저 URL 쿼리 파라미터 동기화 (뒤로 가기 지원 및 자동 로그인) ---
 query_params = st.query_params
+
+# 자동 로그인 검사
 if "user" in query_params and not st.session_state['logged_in']:
     st.session_state['logged_in'] = True
     st.session_state['username'] = query_params["user"]
+
+# 상태 기반 페이지 라우팅 검사 (뒤로가기 버튼 눌렀을 때 반응)
+if st.session_state['logged_in']:
+    if "date" in query_params:
+        date_from_url = query_params["date"]
+        allowed = get_allowed_dates()
+        if date_from_url in allowed:
+            st.session_state['selected_date'] = date_from_url
+        else:
+            # 허용되지 않은 과거/미래 날짜를 주소창에 강제로 입력한 경우 방어
+            st.warning(f"❌ {date_from_url} 날짜는 현재 접근할 수 없습니다.")
+            del st.query_params["date"]
+            st.session_state['selected_date'] = None
+    else:
+        st.session_state['selected_date'] = None
 
 # Streamlit Secrets에서 서버 API 키 자동 로드
 try:
@@ -94,7 +123,7 @@ def analyze_food_text(food_name, quantity, api_key):
     return json.loads(cleaned_json)
 
 # ---------------------------------------------------------
-# 4. 로그인 / 회원가입 화면 (수정완료: DB 커밋 및 저장 보장)
+# 4. 로그인 / 회원가입 화면
 # ---------------------------------------------------------
 def login_page():
     st.title("🥗 Protein Lens 로그인")
@@ -111,9 +140,7 @@ def login_page():
             else:
                 c = conn.cursor()
                 c.execute("SELECT * FROM users WHERE username=? AND password=?", (login_id.strip(), login_pw.strip()))
-                user_match = c.fetchone()
-                
-                if user_match:
+                if c.fetchone():
                     st.session_state['logged_in'] = True
                     st.session_state['username'] = login_id.strip()
                     
@@ -142,11 +169,8 @@ def login_page():
                     st.error("이미 존재하는 아이디입니다.")
                 else:
                     try:
-                        # 1. 사용자 등록
                         c.execute("INSERT INTO users (username, password) VALUES (?, ?)", (reg_id_clean, reg_pw_clean))
-                        # 2. 기본 목표 설정 추가
                         c.execute("INSERT INTO goals (username, target_kcal, target_protein, target_fat, target_sugar) VALUES (?, 2000, 100, 50, 30)", (reg_id_clean,))
-                        # 3. 즉시 DB 저장(Commit)
                         conn.commit()
                         st.success(f"🎉 회원가입 성공! '{reg_id_clean}'님, 로그인 탭으로 이동하여 로그인해주세요.")
                     except Exception as e:
@@ -159,18 +183,15 @@ def login_page():
 def main_calendar_page():
     st.sidebar.title(f"👋 {st.session_state['username']}님 환영합니다!")
 
-    # --- 목표 설정 섹션 ---
-    st.sidebar.subheader("🎯 나의 하루 목표")
     c = conn.cursor()
     c.execute("SELECT target_kcal, target_protein, target_fat, target_sugar FROM goals WHERE username=?", (st.session_state['username'],))
     goal = c.fetchone()
-    
     if not goal:
-        # 혹시 목표가 없는 경우 기본값 부여
         c.execute("INSERT INTO goals VALUES (?, 2000, 100, 50, 30)", (st.session_state['username'],))
         conn.commit()
         goal = (2000.0, 100.0, 50.0, 30.0)
     
+    st.sidebar.subheader("🎯 나의 하루 목표")
     with st.sidebar.form("goal_form"):
         target_kcal = st.number_input("목표 칼로리 (kcal)", value=float(goal[0]))
         target_protein = st.number_input("목표 단백질 (g)", value=float(goal[1]))
@@ -183,7 +204,6 @@ def main_calendar_page():
             st.success("목표가 업데이트 되었습니다!")
             st.rerun()
 
-    # --- 로그아웃 버튼 ---
     st.sidebar.divider()
     if st.sidebar.button("🚪 로그아웃", type="primary"):
         st.session_state['logged_in'] = False
@@ -194,20 +214,12 @@ def main_calendar_page():
 
     st.title("📅 프로틴 렌즈 다이어리")
     
-    # --- 허용 날짜 계산 로직 ---
-    KST = datetime.timezone(datetime.timedelta(hours=9))
-    now = datetime.datetime.now(KST)
-    today_str = now.strftime("%Y-%m-%d")
-    yesterday_str = (now - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
-    
-    allowed_dates = [today_str]
-    if now.hour < 3:
-        allowed_dates.append(yesterday_str)
+    allowed_dates = get_allowed_dates()
+    if len(allowed_dates) > 1:
         st.info("🌙 현재 새벽 시간입니다. 어제 날짜의 야식 기록이 가능합니다.")
     else:
         st.info("📌 오늘 날짜만 식단 기록 및 수정이 가능합니다.")
 
-    # --- 달력 이벤트 색상 계산 ---
     c.execute("SELECT date, SUM(kcal), SUM(protein) FROM meals WHERE username=? GROUP BY date", (st.session_state['username'],))
     daily_records = c.fetchall()
     
@@ -223,16 +235,13 @@ def main_calendar_page():
             
         calendar_events.append({"title": title, "start": date_record, "color": color})
 
+    # [수정] month 버튼 제거 및 today 버튼을 "오늘"로 변경
     calendar_options = {
-    # right에서 dayGridMonth(month 버튼)를 제거하여 깔끔하게 정돈
-    "headerToolbar": {"left": "prev,next today", "center": "title", "right": ""},
-    "initialView": "dayGridMonth",
-    "buttonText": {
-        "today": "오늘"  # 영어 'today'를 한글 '오늘'로 변경
-    },
-    "selectable": True,
-}
-    
+        "headerToolbar": {"left": "prev,next today", "center": "title", "right": ""},
+        "initialView": "dayGridMonth",
+        "buttonText": {"today": "오늘"},
+        "selectable": True,
+    }
     custom_css = ".fc-event-title { font-weight: bold; } .fc-daygrid-day-number { color: black; }"
     cal_result = calendar(events=calendar_events, options=calendar_options, custom_css=custom_css)
     
@@ -249,6 +258,8 @@ def main_calendar_page():
             clicked_date_str = raw_date[:10]
         
         if clicked_date_str in allowed_dates:
+            # 브라우저 URL에 날짜 파라미터 추가하여 '뒤로 가기' 인식 지원
+            st.query_params["date"] = clicked_date_str
             st.session_state['selected_date'] = clicked_date_str
             st.rerun()
         else:
@@ -259,7 +270,11 @@ def main_calendar_page():
 # ---------------------------------------------------------
 def day_detail_page():
     date_str = st.session_state['selected_date']
+    
+    # 캘린더 복귀 시 URL에서 date 파라미터 제거
     if st.button("⬅️ 달력으로 돌아가기"):
+        if "date" in st.query_params:
+            del st.query_params["date"]
         st.session_state['selected_date'] = None
         st.rerun()
         
