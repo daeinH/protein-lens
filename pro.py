@@ -19,8 +19,12 @@ if 'username' not in st.session_state:
     st.session_state['username'] = ""
 if 'selected_date' not in st.session_state:
     st.session_state['selected_date'] = None
-if 'gemini_api_key' not in st.session_state:
-    st.session_state['gemini_api_key'] = ""
+
+# Streamlit Secrets에서 서버 API 키 자동 로드 (사용자 UI 없음)
+try:
+    GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
+except:
+    GEMINI_API_KEY = ""
 
 # ---------------------------------------------------------
 # 2. 데이터베이스 셋업 (SQLite)
@@ -39,10 +43,9 @@ def init_db():
 conn = init_db()
 
 # ---------------------------------------------------------
-# 3. AI 분석 함수 (실제 Gemini API 연동)
+# 3. AI 분석 함수
 # ---------------------------------------------------------
 def clean_json_string(raw_string):
-    """AI가 반환한 텍스트에서 마크다운(```json)을 제거하고 순수 JSON 문자열만 추출"""
     raw_string = raw_string.strip()
     if raw_string.startswith("```json"):
         raw_string = raw_string[7:]
@@ -54,7 +57,6 @@ def clean_json_string(raw_string):
 
 def analyze_food_image(image, api_key):
     genai.configure(api_key=api_key)
-    # 이미지 및 텍스트 동시 분석에 적합한 최신 모델
     model = genai.GenerativeModel('gemini-1.5-flash') 
     
     prompt = """
@@ -125,19 +127,6 @@ def login_page():
 # ---------------------------------------------------------
 def main_calendar_page():
     st.sidebar.title(f"👋 {st.session_state['username']}님 환영합니다!")
-    
-    # --- Gemini API 키 설정 ---
-    st.sidebar.subheader("🔑 API 키 설정")
-    api_key_input = st.sidebar.text_input("Google Gemini API Key 입력", type="password", value=st.session_state['gemini_api_key'])
-    if api_key_input != st.session_state['gemini_api_key']:
-        st.session_state['gemini_api_key'] = api_key_input
-    
-    if not st.session_state['gemini_api_key']:
-        st.sidebar.warning("⚠️ AI 기능을 사용하려면 API 키를 입력하세요.")
-    else:
-        st.sidebar.success("✅ API 키 적용됨")
-
-    st.sidebar.divider()
 
     # --- 목표 설정 섹션 ---
     st.sidebar.subheader("🎯 나의 하루 목표")
@@ -265,12 +254,12 @@ def day_detail_page():
             if uploaded_image is not None:
                 st.image(uploaded_image, width=300)
                 if st.button(f"{meal_type} 사진으로 분석하기", key=f"btn_analyze_{meal_type}"):
-                    if not st.session_state['gemini_api_key']:
-                        st.error("왼쪽 사이드바에서 Gemini API 키를 먼저 입력해주세요!")
+                    if not GEMINI_API_KEY:
+                        st.error("서버에 API 키가 설정되지 않았습니다. 관리자에게 문의하세요.")
                     else:
                         with st.spinner("AI가 이미지를 꼼꼼히 분석 중입니다..."):
                             try:
-                                result = analyze_food_image(uploaded_image, st.session_state['gemini_api_key'])
+                                result = analyze_food_image(uploaded_image, GEMINI_API_KEY)
                                 c = conn.cursor()
                                 c.execute("INSERT INTO meals (username, date, meal_type, food_name, quantity, kcal, protein, fat, sugar) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                                           (st.session_state['username'], date_str, meal_type, result['food_name'], 1.0, result['kcal'], result['protein'], result['fat'], result['sugar']))
@@ -278,7 +267,7 @@ def day_detail_page():
                                 st.success("사진 분석 및 저장 완료!")
                                 st.rerun()
                             except Exception as e:
-                                st.error(f"분석 중 오류가 발생했습니다. API 키가 정확한지 확인해주세요. (에러: {e})")
+                                st.error(f"분석 중 오류가 발생했습니다. (에러: {e})")
 
             elif input_mode == "✍️ 텍스트 입력 (AI 자동계산)":
                 if f'num_rows_{meal_type}' not in st.session_state:
@@ -302,8 +291,8 @@ def day_detail_page():
                         quantities.append(q)
                     
                     if st.form_submit_button("일괄 AI 계산 및 저장하기"):
-                        if not st.session_state['gemini_api_key']:
-                            st.error("왼쪽 사이드바에서 Gemini API 키를 먼저 입력해주세요!")
+                        if not GEMINI_API_KEY:
+                            st.error("서버에 API 키가 설정되지 않았습니다. 관리자에게 문의하세요.")
                         else:
                             added_count = 0
                             c = conn.cursor()
@@ -311,7 +300,7 @@ def day_detail_page():
                                 try:
                                     for fn, q in zip(food_names, quantities):
                                         if fn.strip() != "":
-                                            result = analyze_food_text(fn, q, st.session_state['gemini_api_key'])
+                                            result = analyze_food_text(fn, q, GEMINI_API_KEY)
                                             c.execute("INSERT INTO meals (username, date, meal_type, food_name, quantity, kcal, protein, fat, sugar) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                                                       (st.session_state['username'], date_str, meal_type, fn, q, result.get('kcal', 0), result.get('protein', 0), result.get('fat', 0), result.get('sugar', 0)))
                                             added_count += 1
