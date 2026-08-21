@@ -9,9 +9,29 @@ import json
 import re
 
 # ---------------------------------------------------------
-# 1. 앱 기본 설정, 세션 및 자동 로그인 초기화
+# 1. 앱 기본 설정, CSS 모바일 최적화 및 세션 초기화
 # ---------------------------------------------------------
 st.set_page_config(page_title="Protein Lens", page_icon="🥗", layout="wide")
+
+# 모바일 한 화면에 맞추기 위한 여백 및 글자 크기 조정 CSS
+st.markdown("""
+    <style>
+    /* 전체 여백 최소화 */
+    .block-container {
+        padding-top: 1rem !important;
+        padding-bottom: 0.5rem !important;
+        padding-left: 0.5rem !important;
+        padding-right: 0.5rem !important;
+    }
+    /* 모바일 반응형 제목 크기 */
+    @media (max-width: 600px) {
+        h1, h2 {
+            font-size: 1.4rem !important;
+            margin-bottom: 0.2rem !important;
+        }
+    }
+    </style>
+""", unsafe_allow_html=True)
 
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
@@ -193,13 +213,14 @@ def view_calendar():
         st.query_params.clear()
         st.rerun()
 
-    st.title("📅 프로틴 렌즈 다이어리")
+    # 모바일용 컴팩트 헤더 적용
+    st.markdown("<h2 style='margin-top:-10px; margin-bottom: 2px;'>📅 프로틴 렌즈 다이어리</h2>", unsafe_allow_html=True)
     
     allowed_dates = get_allowed_dates()
     if len(allowed_dates) > 1:
-        st.info("🌙 현재 새벽 시간입니다. 어제 날짜의 야식 기록이 가능합니다.")
+        st.caption("🌙 현재 새벽 시간입니다. 어제/오늘 날짜 식단 기록이 가능합니다.")
     else:
-        st.info("📌 오늘 날짜만 식단 기록 및 수정이 가능합니다.")
+        st.caption("📌 오늘 날짜만 식단 기록 및 수정이 가능합니다.")
 
     c.execute("SELECT date, SUM(kcal), SUM(protein) FROM meals WHERE username=? GROUP BY date", (st.session_state['username'],))
     daily_records = c.fetchall()
@@ -216,16 +237,27 @@ def view_calendar():
             
         calendar_events.append({"title": title, "start": date_record, "color": color})
 
+    # 모바일 한 화면에 쏙 들어오도록 높이(height) 및 CSS 반응형 조정
     calendar_options = {
         "headerToolbar": {"left": "prev,next today", "center": "title", "right": ""},
         "initialView": "dayGridMonth",
         "buttonText": {"today": "오늘"},
         "selectable": True,
+        "height": 380,  # 모바일 화면 높이에 맞춘 고정 높이
     }
-    custom_css = ".fc-event-title { font-weight: bold; } .fc-daygrid-day-number { color: black; }"
+    
+    custom_css = """
+        .fc { font-size: 0.75rem !important; }
+        .fc-toolbar-title { font-size: 1.0rem !important; }
+        .fc-button { padding: 0.15rem 0.3rem !important; font-size: 0.75rem !important; }
+        .fc-col-header-cell-cushion { padding: 1px !important; color: #ffffff !important; }
+        .fc-daygrid-day-number { color: #ffffff !important; font-weight: bold; padding: 2px !important; }
+        .fc-daygrid-day-frame { min-height: 42px !important; }
+        .fc-event-title { font-size: 0.65rem !important; font-weight: bold; }
+    """
+    
     cal_result = calendar(events=calendar_events, options=calendar_options, custom_css=custom_css)
     
-    # 날짜를 클릭하면 페이지 이동(switch_page)을 통해 브라우저 기록 생성
     if cal_result.get("dateClick"):
         raw_date = cal_result["dateClick"]["date"]
         if "T" in raw_date:
@@ -240,21 +272,19 @@ def view_calendar():
         
         if clicked_date_str in allowed_dates:
             st.session_state['selected_date'] = clicked_date_str
-            st.switch_page(page_detail) # 브라우저 History를 푸시하며 페이지 이동!
+            st.switch_page(page_detail)
         else:
             st.error(f"❌ {clicked_date_str} 날짜는 현재 기록하거나 수정할 수 없습니다.")
 
 def view_detail():
     date_str = st.session_state.get('selected_date')
     
-    # 예외 처리: 날짜 선택 없이 상세 페이지로 접근한 경우
     if not date_str:
         st.warning("선택된 날짜가 없습니다.")
         if st.button("⬅️ 달력으로 돌아가기"):
             st.switch_page(page_calendar)
         return
 
-    # 상세 페이지 내부의 '돌아가기' 버튼 (선택사항 - 브라우저 뒤로가기로도 동작함)
     if st.button("⬅️ 달력으로 돌아가기"):
         st.session_state['selected_date'] = None
         st.switch_page(page_calendar)
@@ -420,19 +450,16 @@ def view_detail():
         st.info("아직 기록된 식단이 없습니다.")
 
 # ---------------------------------------------------------
-# 7. 라우팅 (새로운 Multi-Page Navigation 적용)
+# 5. 라우팅
 # ---------------------------------------------------------
 
-# 각 함수들을 독립적인 '페이지(Page)'로 선언
 page_login = st.Page(view_login, title="로그인", url_path="login")
 page_calendar = st.Page(view_calendar, title="달력", url_path="calendar", default=True)
 page_detail = st.Page(view_detail, title="식단 기록", url_path="detail")
 
-# 로그인 여부에 따라 접근 가능한 페이지를 네비게이터에 할당 (사이드바 메뉴는 숨김 처리)
 if not st.session_state.get('logged_in', False):
     pg = st.navigation([page_login], position="hidden")
 else:
     pg = st.navigation([page_calendar, page_detail], position="hidden")
 
-# 선택된 페이지 실행
 pg.run()
