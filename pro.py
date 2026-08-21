@@ -9,7 +9,7 @@ import json
 import re
 
 # ---------------------------------------------------------
-# 1. 앱 기본 설정 및 세션 초기화
+# 1. 앱 기본 설정, 세션 및 자동 로그인 초기화
 # ---------------------------------------------------------
 st.set_page_config(page_title="Protein Lens", page_icon="🥗", layout="wide")
 
@@ -20,40 +20,11 @@ if 'username' not in st.session_state:
 if 'selected_date' not in st.session_state:
     st.session_state['selected_date'] = None
 
-# --- 허용 날짜 계산 함수 ---
-def get_allowed_dates():
-    KST = datetime.timezone(datetime.timedelta(hours=9))
-    now = datetime.datetime.now(KST)
-    today_str = now.strftime("%Y-%m-%d")
-    yesterday_str = (now - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
-    
-    allowed_dates = [today_str]
-    if now.hour < 3:
-        allowed_dates.append(yesterday_str)
-    return allowed_dates
-
-# --- 브라우저 URL 쿼리 파라미터 동기화 (뒤로 가기 지원 및 자동 로그인) ---
+# URL 쿼리 파라미터를 통한 자동 로그인 검사
 query_params = st.query_params
-
-# 자동 로그인 검사
 if "user" in query_params and not st.session_state['logged_in']:
     st.session_state['logged_in'] = True
     st.session_state['username'] = query_params["user"]
-
-# 상태 기반 페이지 라우팅 검사 (뒤로가기 버튼 눌렀을 때 반응)
-if st.session_state['logged_in']:
-    if "date" in query_params:
-        date_from_url = query_params["date"]
-        allowed = get_allowed_dates()
-        if date_from_url in allowed:
-            st.session_state['selected_date'] = date_from_url
-        else:
-            # 허용되지 않은 과거/미래 날짜를 주소창에 강제로 입력한 경우 방어
-            st.warning(f"❌ {date_from_url} 날짜는 현재 접근할 수 없습니다.")
-            del st.query_params["date"]
-            st.session_state['selected_date'] = None
-    else:
-        st.session_state['selected_date'] = None
 
 # Streamlit Secrets에서 서버 API 키 자동 로드
 try:
@@ -76,6 +47,18 @@ def init_db():
     return conn
 
 conn = init_db()
+
+# --- 허용 날짜 계산 함수 ---
+def get_allowed_dates():
+    KST = datetime.timezone(datetime.timedelta(hours=9))
+    now = datetime.datetime.now(KST)
+    today_str = now.strftime("%Y-%m-%d")
+    yesterday_str = (now - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+    
+    allowed_dates = [today_str]
+    if now.hour < 3:
+        allowed_dates.append(yesterday_str)
+    return allowed_dates
 
 # ---------------------------------------------------------
 # 3. AI 분석 함수 (gemini-3.6-flash 고정)
@@ -123,9 +106,10 @@ def analyze_food_text(food_name, quantity, api_key):
     return json.loads(cleaned_json)
 
 # ---------------------------------------------------------
-# 4. 로그인 / 회원가입 화면
+# 4. 각 페이지별 화면 렌더링 함수들
 # ---------------------------------------------------------
-def login_page():
+
+def view_login():
     st.title("🥗 Protein Lens 로그인")
     tab1, tab2 = st.tabs(["로그인", "회원가입"])
     
@@ -177,10 +161,7 @@ def login_page():
                         conn.rollback()
                         st.error(f"회원가입 처리 중 오류 발생: {e}")
 
-# ---------------------------------------------------------
-# 5. 메인 달력 화면 & 목표 설정
-# ---------------------------------------------------------
-def main_calendar_page():
+def view_calendar():
     st.sidebar.title(f"👋 {st.session_state['username']}님 환영합니다!")
 
     c = conn.cursor()
@@ -235,7 +216,6 @@ def main_calendar_page():
             
         calendar_events.append({"title": title, "start": date_record, "color": color})
 
-    # [수정] month 버튼 제거 및 today 버튼을 "오늘"로 변경
     calendar_options = {
         "headerToolbar": {"left": "prev,next today", "center": "title", "right": ""},
         "initialView": "dayGridMonth",
@@ -245,6 +225,7 @@ def main_calendar_page():
     custom_css = ".fc-event-title { font-weight: bold; } .fc-daygrid-day-number { color: black; }"
     cal_result = calendar(events=calendar_events, options=calendar_options, custom_css=custom_css)
     
+    # 날짜를 클릭하면 페이지 이동(switch_page)을 통해 브라우저 기록 생성
     if cal_result.get("dateClick"):
         raw_date = cal_result["dateClick"]["date"]
         if "T" in raw_date:
@@ -258,25 +239,25 @@ def main_calendar_page():
             clicked_date_str = raw_date[:10]
         
         if clicked_date_str in allowed_dates:
-            # 브라우저 URL에 날짜 파라미터 추가하여 '뒤로 가기' 인식 지원
-            st.query_params["date"] = clicked_date_str
             st.session_state['selected_date'] = clicked_date_str
-            st.rerun()
+            st.switch_page(page_detail) # 브라우저 History를 푸시하며 페이지 이동!
         else:
             st.error(f"❌ {clicked_date_str} 날짜는 현재 기록하거나 수정할 수 없습니다.")
 
-# ---------------------------------------------------------
-# 6. 일일 식단 기록 상세 화면
-# ---------------------------------------------------------
-def day_detail_page():
-    date_str = st.session_state['selected_date']
+def view_detail():
+    date_str = st.session_state.get('selected_date')
     
-    # 캘린더 복귀 시 URL에서 date 파라미터 제거
+    # 예외 처리: 날짜 선택 없이 상세 페이지로 접근한 경우
+    if not date_str:
+        st.warning("선택된 날짜가 없습니다.")
+        if st.button("⬅️ 달력으로 돌아가기"):
+            st.switch_page(page_calendar)
+        return
+
+    # 상세 페이지 내부의 '돌아가기' 버튼 (선택사항 - 브라우저 뒤로가기로도 동작함)
     if st.button("⬅️ 달력으로 돌아가기"):
-        if "date" in st.query_params:
-            del st.query_params["date"]
         st.session_state['selected_date'] = None
-        st.rerun()
+        st.switch_page(page_calendar)
         
     date_obj = datetime.datetime.strptime(date_str, "%Y-%m-%d").date()
     weekdays = ["월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일"]
@@ -439,12 +420,19 @@ def day_detail_page():
         st.info("아직 기록된 식단이 없습니다.")
 
 # ---------------------------------------------------------
-# 7. 라우팅 로직
+# 7. 라우팅 (새로운 Multi-Page Navigation 적용)
 # ---------------------------------------------------------
-if not st.session_state['logged_in']:
-    login_page()
+
+# 각 함수들을 독립적인 '페이지(Page)'로 선언
+page_login = st.Page(view_login, title="로그인", url_path="login")
+page_calendar = st.Page(view_calendar, title="달력", url_path="calendar", default=True)
+page_detail = st.Page(view_detail, title="식단 기록", url_path="detail")
+
+# 로그인 여부에 따라 접근 가능한 페이지를 네비게이터에 할당 (사이드바 메뉴는 숨김 처리)
+if not st.session_state.get('logged_in', False):
+    pg = st.navigation([page_login], position="hidden")
 else:
-    if st.session_state['selected_date'] is None:
-        main_calendar_page()
-    else:
-        day_detail_page()
+    pg = st.navigation([page_calendar, page_detail], position="hidden")
+
+# 선택된 페이지 실행
+pg.run()
