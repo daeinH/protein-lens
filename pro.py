@@ -7,18 +7,11 @@ import google.generativeai as genai
 from PIL import Image
 import json
 import re
-import extra_streamlit_components as stx
 
 # ---------------------------------------------------------
-# 1. 앱 기본 설정, 세션 및 쿠키 초기화
+# 1. 앱 기본 설정, 세션 및 자동 로그인 초기화
 # ---------------------------------------------------------
 st.set_page_config(page_title="Protein Lens", page_icon="🥗", layout="wide")
-
-@st.cache_resource
-def get_cookie_manager():
-    return stx.CookieManager()
-
-cookie_manager = get_cookie_manager()
 
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
@@ -27,11 +20,11 @@ if 'username' not in st.session_state:
 if 'selected_date' not in st.session_state:
     st.session_state['selected_date'] = None
 
-# 자동 로그인 토큰 확인 (쿠키에 정보가 있으면 자동 로그인 처리)
-stored_user = cookie_manager.get(cookie="remember_user")
-if stored_user and not st.session_state['logged_in']:
+# URL 쿼리 파라미터를 통한 자동 로그인 검사 (라이브러리 미사용)
+query_params = st.query_params
+if "user" in query_params and not st.session_state['logged_in']:
     st.session_state['logged_in'] = True
-    st.session_state['username'] = stored_user
+    st.session_state['username'] = query_params["user"]
 
 # Streamlit Secrets에서 서버 API 키 자동 로드
 try:
@@ -40,10 +33,9 @@ except:
     GEMINI_API_KEY = ""
 
 # ---------------------------------------------------------
-# 2. 데이터베이스 셋업 (SQLite 복구)
+# 2. 데이터베이스 셋업 (SQLite)
 # ---------------------------------------------------------
 def init_db():
-    # check_same_thread=False 를 추가하여 Streamlit 환경에서 안정적으로 동작하게 함
     conn = sqlite3.connect('protein_lens.db', check_same_thread=False)
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password TEXT)''')
@@ -102,7 +94,7 @@ def analyze_food_text(food_name, quantity, api_key):
     return json.loads(cleaned_json)
 
 # ---------------------------------------------------------
-# 4. 로그인 / 회원가입 화면 (자동 로그인 적용)
+# 4. 로그인 / 회원가입 화면 (자동 로그인 지원)
 # ---------------------------------------------------------
 def login_page():
     st.title("🥗 Protein Lens 로그인")
@@ -111,7 +103,7 @@ def login_page():
     with tab1:
         login_id = st.text_input("아이디", key="login_id")
         login_pw = st.text_input("비밀번호", type="password", key="login_pw")
-        auto_login = st.checkbox("자동 로그인 유지") # 체크박스 추가
+        auto_login = st.checkbox("자동 로그인 유지 (이 브라우저에서 유지)")
         
         if st.button("로그인"):
             c = conn.cursor()
@@ -120,9 +112,9 @@ def login_page():
                 st.session_state['logged_in'] = True
                 st.session_state['username'] = login_id
                 
-                # 자동 로그인 체크 시 쿠키에 30일간 아이디 저장
+                # 자동 로그인 체크 시 URL 파라미터에 아이디 기록
                 if auto_login:
-                    cookie_manager.set("remember_user", login_id, expires_at=datetime.datetime.now() + datetime.timedelta(days=30))
+                    st.query_params["user"] = login_id
                 
                 st.rerun()
             else:
@@ -165,13 +157,13 @@ def main_calendar_page():
             st.success("목표가 업데이트 되었습니다!")
             st.rerun()
 
-    # --- 로그아웃 버튼 로직 ---
+    # --- 로그아웃 버튼 ---
     st.sidebar.divider()
     if st.sidebar.button("🚪 로그아웃", type="primary"):
         st.session_state['logged_in'] = False
         st.session_state['username'] = ""
         st.session_state['selected_date'] = None
-        cookie_manager.delete("remember_user") # 쿠키 완전 삭제
+        st.query_params.clear() # 자동 로그인 정보 삭제
         st.rerun()
 
     st.title("📅 프로틴 렌즈 다이어리")
