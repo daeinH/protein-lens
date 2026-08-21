@@ -12,26 +12,19 @@ import json
 # ---------------------------------------------------------
 st.set_page_config(page_title="Protein Lens", page_icon="🥗", layout="wide")
 
-# PC와 모바일 화면을 구분하여 다르게 렌더링하는 반응형 CSS
 st.markdown("""
     <style>
-    /* 기본 (PC) 여백 설정 */
     .block-container {
         padding-top: 2rem !important;
         padding-bottom: 2rem !important;
     }
-    
-    /* 모바일 화면 (가로 해상도 768px 이하) 전용 설정 */
     @media (max-width: 768px) {
         .block-container {
             padding-top: 1rem !important;
             padding-left: 0.5rem !important;
             padding-right: 0.5rem !important;
         }
-        /* 모바일 제목 크기 축소 */
         h1 { font-size: 1.5rem !important; padding-bottom: 0 !important; }
-        
-        /* 모바일 캘린더 내부 글씨 및 높이 최적화 */
         .fc { font-size: 0.75rem !important; }
         .fc-toolbar-title { font-size: 1.1rem !important; }
         .fc-button { padding: 0.2rem 0.4rem !important; font-size: 0.8rem !important; }
@@ -50,13 +43,11 @@ if 'username' not in st.session_state:
 if 'selected_date' not in st.session_state:
     st.session_state['selected_date'] = None
 
-# URL 쿼리 파라미터를 통한 자동 로그인 검사
 query_params = st.query_params
 if "user" in query_params and not st.session_state['logged_in']:
     st.session_state['logged_in'] = True
     st.session_state['username'] = query_params["user"]
 
-# Streamlit Secrets에서 서버 API 키 자동 로드
 try:
     GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 except:
@@ -78,20 +69,18 @@ def init_db():
 
 conn = init_db()
 
-# --- 허용 날짜 계산 함수 ---
 def get_allowed_dates():
     KST = datetime.timezone(datetime.timedelta(hours=9))
     now = datetime.datetime.now(KST)
     today_str = now.strftime("%Y-%m-%d")
     yesterday_str = (now - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
-    
     allowed_dates = [today_str]
     if now.hour < 3:
         allowed_dates.append(yesterday_str)
     return allowed_dates
 
 # ---------------------------------------------------------
-# 3. AI 분석 함수 (gemini-3.6-flash 고정)
+# 3. AI 분석 함수
 # ---------------------------------------------------------
 def clean_json_string(raw_string):
     raw_string = raw_string.strip()
@@ -106,12 +95,10 @@ def clean_json_string(raw_string):
 def analyze_food_image(image, api_key):
     genai.configure(api_key=api_key)
     model = genai.GenerativeModel('gemini-3.6-flash') 
-    
     prompt = """
     당신은 영양 분석 전문가입니다. 이 사진을 분석하여 다음 2단계 규칙에 따라 영양 성분을 알려주세요.
     1단계: 사진에 '영양 성분표(라벨)'가 있다면 라벨의 글자를 읽어서 칼로리, 단백질, 지방, 당류를 정확히 추출하세요.
     2단계: 만약 라벨이 없다면, 사진 속 음식의 종류와 양을 인식하여 해당 음식의 평균적인 칼로리, 단백질, 지방, 당류를 추정하세요.
-    
     반드시 아래 JSON 형식으로만 대답하세요. 다른 설명이나 마크다운 기호는 절대 넣지 마세요:
     {"food_name": "음식명(간단히)", "kcal": 0, "protein": 0, "fat": 0, "sugar": 0}
     """
@@ -122,12 +109,10 @@ def analyze_food_image(image, api_key):
 def analyze_food_text(food_name, quantity, api_key):
     genai.configure(api_key=api_key)
     model = genai.GenerativeModel('gemini-3.6-flash')
-    
     prompt = f"""
     당신은 영양학자입니다. 사용자가 '{food_name}'을(를) {quantity}개(또는 인분) 섭취했습니다. 
     인터넷에 알려진 이 제품 또는 음식의 실제 1개(1인분) 평균 영양성분을 찾은 뒤, 
     섭취 수량({quantity})을 곱하여 **최종 총 영양성분**을 계산해주세요.
-    
     반드시 아래 JSON 형식으로만 대답하세요. 다른 설명이나 마크다운 기호는 절대 넣지 마세요:
     {{"kcal": 0, "protein": 0, "fat": 0, "sugar": 0}}
     """
@@ -138,7 +123,6 @@ def analyze_food_text(food_name, quantity, api_key):
 # ---------------------------------------------------------
 # 4. 각 페이지별 화면 렌더링 함수들
 # ---------------------------------------------------------
-
 def view_login():
     st.title("🥗 Protein Lens 로그인")
     tab1, tab2 = st.tabs(["로그인", "회원가입"])
@@ -147,7 +131,6 @@ def view_login():
         login_id = st.text_input("아이디", key="login_id")
         login_pw = st.text_input("비밀번호", type="password", key="login_pw")
         auto_login = st.checkbox("자동 로그인 유지 (이 브라우저에서 유지)")
-        
         if st.button("로그인"):
             if not login_id.strip() or not login_pw.strip():
                 st.warning("아이디와 비밀번호를 모두 입력해주세요.")
@@ -157,10 +140,8 @@ def view_login():
                 if c.fetchone():
                     st.session_state['logged_in'] = True
                     st.session_state['username'] = login_id.strip()
-                    
                     if auto_login:
                         st.query_params["user"] = login_id.strip()
-                    
                     st.success("로그인 성공!")
                     st.rerun()
                 else:
@@ -169,11 +150,9 @@ def view_login():
     with tab2:
         reg_id = st.text_input("새 아이디", key="reg_id_input")
         reg_pw = st.text_input("새 비밀번호", type="password", key="reg_pw_input")
-        
         if st.button("가입하기"):
             reg_id_clean = reg_id.strip()
             reg_pw_clean = reg_pw.strip()
-            
             if not reg_id_clean or not reg_pw_clean:
                 st.warning("아이디와 비밀번호를 모두 입력해주세요.")
             else:
@@ -193,7 +172,6 @@ def view_login():
 
 def view_calendar():
     st.sidebar.title(f"👋 {st.session_state['username']}님 환영합니다!")
-
     c = conn.cursor()
     c.execute("SELECT target_kcal, target_protein, target_fat, target_sugar FROM goals WHERE username=?", (st.session_state['username'],))
     goal = c.fetchone()
@@ -225,7 +203,6 @@ def view_calendar():
         st.rerun()
 
     st.title("📅 프로틴 렌즈 다이어리")
-    
     allowed_dates = get_allowed_dates()
     if len(allowed_dates) > 1:
         st.caption("🌙 현재 새벽 시간입니다. 어제/오늘 날짜 식단 기록이 가능합니다.")
@@ -244,7 +221,6 @@ def view_calendar():
         else:
             color = "#dc3545"
             title = "목표 미달성"
-            
         calendar_events.append({"title": title, "start": date_record, "color": color})
 
     calendar_options = {
@@ -255,13 +231,11 @@ def view_calendar():
         "contentHeight": "auto", 
     }
     
-    # [수정됨] 다크모드/라이트모드 자동 대응을 위해 글씨색(color)을 inherit으로 변경
     custom_css = """
         .fc-event-title { font-weight: bold; } 
         .fc-daygrid-day-number { color: inherit !important; text-decoration: none; }
         .fc-col-header-cell-cushion { color: inherit !important; text-decoration: none; }
     """
-    
     cal_result = calendar(events=calendar_events, options=calendar_options, custom_css=custom_css)
     
     if cal_result.get("dateClick"):
@@ -284,7 +258,6 @@ def view_calendar():
 
 def view_detail():
     date_str = st.session_state.get('selected_date')
-    
     if not date_str:
         st.warning("선택된 날짜가 없습니다.")
         if st.button("⬅️ 달력으로 돌아가기"):
@@ -300,7 +273,6 @@ def view_detail():
     weekday_str = weekdays[date_obj.weekday()]
     
     st.title(f"🍽️ {date_str} ({weekday_str}) 식단 기록")
-    
     tabs = st.tabs(["아침", "점심", "저녁", "간식"])
     meal_types = ["아침", "점심", "저녁", "간식"]
     
@@ -309,47 +281,43 @@ def view_detail():
             meal_type = meal_types[i]
             st.subheader(f"{meal_type} 기록하기")
             
+            # 카메라 모드와 업로드 모드를 하나로 통합
             input_mode = st.radio(
                 "입력 방식", 
-                ["📷 스마트폰 카메라", "🖼️ 사진 업로드", "✍️ 텍스트 입력 (AI 자동계산)"], 
+                ["📷 사진 촬영 및 업로드", "✍️ 텍스트 입력 (AI 자동계산)"], 
                 horizontal=True, 
                 key=f"radio_{meal_type}"
             )
             
             uploaded_image = None
             
-            if input_mode == "📷 스마트폰 카메라":
-                camera_photo = st.camera_input("음식 사진 찍기", key=f"cam_{meal_type}")
-                if camera_photo:
-                    uploaded_image = Image.open(camera_photo)
-            
-            elif input_mode == "🖼️ 사진 업로드":
-                file_photo = st.file_uploader(f"{meal_type} 음식 사진 업로드", type=["jpg", "png", "jpeg"], key=f"file_{meal_type}")
+            if input_mode == "📷 사진 촬영 및 업로드":
+                st.caption("💡 스마트폰(아이폰/갤럭시)에서 아래 버튼을 누르면 기본 카메라 앱이 실행되거나 사진첩을 열 수 있습니다.")
+                # 파일 업로더가 모바일 기기에서는 카메라/사진첩 선택 창을 띄우는 네이티브 트리거 역할을 합니다.
+                file_photo = st.file_uploader(f"{meal_type} 음식 사진 첨부", type=["jpg", "png", "jpeg"], key=f"file_{meal_type}")
+                
                 if file_photo:
                     uploaded_image = Image.open(file_photo)
-
-            if uploaded_image is not None:
-                st.image(uploaded_image, width=300)
-                if st.button(f"{meal_type} 사진으로 분석하기", key=f"btn_analyze_{meal_type}"):
-                    if not GEMINI_API_KEY:
-                        st.error("서버에 API 키가 설정되지 않았습니다. 관리자에게 문의하세요.")
-                    else:
-                        with st.spinner("AI가 이미지를 꼼꼼히 분석 중입니다..."):
-                            try:
-                                result = analyze_food_image(uploaded_image, GEMINI_API_KEY)
-                                c = conn.cursor()
-                                c.execute("INSERT INTO meals (username, date, meal_type, food_name, quantity, kcal, protein, fat, sugar) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                                          (st.session_state['username'], date_str, meal_type, result['food_name'], 1.0, result['kcal'], result['protein'], result['fat'], result['sugar']))
-                                conn.commit()
-                                st.success("사진 분석 및 저장 완료!")
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"분석 중 오류가 발생했습니다. (에러: {e})")
+                    st.image(uploaded_image, width=300)
+                    if st.button(f"{meal_type} 사진으로 분석하기", key=f"btn_analyze_{meal_type}"):
+                        if not GEMINI_API_KEY:
+                            st.error("서버에 API 키가 설정되지 않았습니다. 관리자에게 문의하세요.")
+                        else:
+                            with st.spinner("AI가 이미지를 꼼꼼히 분석 중입니다..."):
+                                try:
+                                    result = analyze_food_image(uploaded_image, GEMINI_API_KEY)
+                                    c = conn.cursor()
+                                    c.execute("INSERT INTO meals (username, date, meal_type, food_name, quantity, kcal, protein, fat, sugar) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                              (st.session_state['username'], date_str, meal_type, result['food_name'], 1.0, result['kcal'], result['protein'], result['fat'], result['sugar']))
+                                    conn.commit()
+                                    st.success("사진 분석 및 저장 완료!")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"분석 중 오류가 발생했습니다. (에러: {e})")
 
             elif input_mode == "✍️ 텍스트 입력 (AI 자동계산)":
                 if f'num_rows_{meal_type}' not in st.session_state:
                     st.session_state[f'num_rows_{meal_type}'] = 1
-
                 if st.button("➕ 음식 입력 칸 추가", key=f"add_row_{meal_type}"):
                     st.session_state[f'num_rows_{meal_type}'] += 1
                     st.rerun()
@@ -398,7 +366,6 @@ def view_detail():
     if records:
         df = pd.DataFrame(records, columns=["ID", "끼니", "음식", "수량", "칼로리", "단백질", "지방", "당류"])
         st.info("💡 표의 내용을 더블클릭하여 직접 숫자를 수정하거나 지울 수 있습니다. 변경 후 반드시 저장 버튼을 누르세요.")
-        
         edited_df = st.data_editor(
             df,
             column_config={
@@ -411,20 +378,17 @@ def view_detail():
             use_container_width=True,
             key="daily_meals_editor"
         )
-        
         if st.button("💾 변경사항 DB에 완전 저장하기", type="primary"):
             changes = st.session_state["daily_meals_editor"]
             for row_idx in changes.get("deleted_rows", []):
                 del_id = int(df.iloc[row_idx]["ID"])
                 c.execute("DELETE FROM meals WHERE id=?", (del_id,))
-                
             for row_idx, col_changes in changes.get("edited_rows", {}).items():
                 edit_id = int(df.iloc[row_idx]["ID"])
                 for col_name, new_val in col_changes.items():
                     db_col_map = {"끼니":"meal_type", "음식":"food_name", "수량":"quantity", "칼로리":"kcal", "단백질":"protein", "지방":"fat", "당류":"sugar"}
                     db_col = db_col_map[col_name]
                     c.execute(f"UPDATE meals SET {db_col}=? WHERE id=?", (new_val, edit_id))
-                    
             for added in changes.get("added_rows", []):
                 meal_type = added.get("끼니", "간식")
                 food_name = added.get("음식", "새 음식")
@@ -435,7 +399,6 @@ def view_detail():
                 sugar = added.get("당류", 0.0)
                 c.execute("INSERT INTO meals (username, date, meal_type, food_name, quantity, kcal, protein, fat, sugar) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                           (st.session_state['username'], date_str, meal_type, food_name, quantity, kcal, protein, fat, sugar))
-                          
             conn.commit()
             st.success("변경사항이 성공적으로 저장되었습니다!")
             st.rerun()
@@ -458,7 +421,6 @@ def view_detail():
 # ---------------------------------------------------------
 # 5. 라우팅
 # ---------------------------------------------------------
-
 page_login = st.Page(view_login, title="로그인", url_path="login")
 page_calendar = st.Page(view_calendar, title="달력", url_path="calendar", default=True)
 page_detail = st.Page(view_detail, title="식단 기록", url_path="detail")
