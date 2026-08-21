@@ -20,7 +20,7 @@ if 'username' not in st.session_state:
 if 'selected_date' not in st.session_state:
     st.session_state['selected_date'] = None
 
-# URL 쿼리 파라미터를 통한 자동 로그인 검사 (라이브러리 미사용)
+# URL 쿼리 파라미터를 통한 자동 로그인 검사
 query_params = st.query_params
 if "user" in query_params and not st.session_state['logged_in']:
     st.session_state['logged_in'] = True
@@ -94,7 +94,7 @@ def analyze_food_text(food_name, quantity, api_key):
     return json.loads(cleaned_json)
 
 # ---------------------------------------------------------
-# 4. 로그인 / 회원가입 화면 (자동 로그인 지원)
+# 4. 로그인 / 회원가입 화면 (수정완료: DB 커밋 및 저장 보장)
 # ---------------------------------------------------------
 def login_page():
     st.title("🥗 Protein Lens 로그인")
@@ -106,32 +106,52 @@ def login_page():
         auto_login = st.checkbox("자동 로그인 유지 (이 브라우저에서 유지)")
         
         if st.button("로그인"):
-            c = conn.cursor()
-            c.execute("SELECT * FROM users WHERE username=? AND password=?", (login_id, login_pw))
-            if c.fetchone():
-                st.session_state['logged_in'] = True
-                st.session_state['username'] = login_id
-                
-                # 자동 로그인 체크 시 URL 파라미터에 아이디 기록
-                if auto_login:
-                    st.query_params["user"] = login_id
-                
-                st.rerun()
+            if not login_id.strip() or not login_pw.strip():
+                st.warning("아이디와 비밀번호를 모두 입력해주세요.")
             else:
-                st.error("아이디나 비밀번호가 틀렸습니다.")
+                c = conn.cursor()
+                c.execute("SELECT * FROM users WHERE username=? AND password=?", (login_id.strip(), login_pw.strip()))
+                user_match = c.fetchone()
+                
+                if user_match:
+                    st.session_state['logged_in'] = True
+                    st.session_state['username'] = login_id.strip()
+                    
+                    if auto_login:
+                        st.query_params["user"] = login_id.strip()
+                    
+                    st.success("로그인 성공!")
+                    st.rerun()
+                else:
+                    st.error("아이디나 비밀번호가 틀렸습니다.")
                 
     with tab2:
-        reg_id = st.text_input("새 아이디")
-        reg_pw = st.text_input("새 비밀번호", type="password")
+        reg_id = st.text_input("새 아이디", key="reg_id_input")
+        reg_pw = st.text_input("새 비밀번호", type="password", key="reg_pw_input")
+        
         if st.button("가입하기"):
-            c = conn.cursor()
-            try:
-                c.execute("INSERT INTO users VALUES (?, ?)", (reg_id, reg_pw))
-                c.execute("INSERT INTO goals VALUES (?, 2000, 100, 50, 30)", (reg_id,))
-                conn.commit()
-                st.success("가입 성공! 로그인 해주세요.")
-            except:
-                st.error("이미 존재하는 아이디입니다.")
+            reg_id_clean = reg_id.strip()
+            reg_pw_clean = reg_pw.strip()
+            
+            if not reg_id_clean or not reg_pw_clean:
+                st.warning("아이디와 비밀번호를 모두 입력해주세요.")
+            else:
+                c = conn.cursor()
+                c.execute("SELECT * FROM users WHERE username=?", (reg_id_clean,))
+                if c.fetchone():
+                    st.error("이미 존재하는 아이디입니다.")
+                else:
+                    try:
+                        # 1. 사용자 등록
+                        c.execute("INSERT INTO users (username, password) VALUES (?, ?)", (reg_id_clean, reg_pw_clean))
+                        # 2. 기본 목표 설정 추가
+                        c.execute("INSERT INTO goals (username, target_kcal, target_protein, target_fat, target_sugar) VALUES (?, 2000, 100, 50, 30)", (reg_id_clean,))
+                        # 3. 즉시 DB 저장(Commit)
+                        conn.commit()
+                        st.success(f"🎉 회원가입 성공! '{reg_id_clean}'님, 로그인 탭으로 이동하여 로그인해주세요.")
+                    except Exception as e:
+                        conn.rollback()
+                        st.error(f"회원가입 처리 중 오류 발생: {e}")
 
 # ---------------------------------------------------------
 # 5. 메인 달력 화면 & 목표 설정
@@ -144,6 +164,12 @@ def main_calendar_page():
     c = conn.cursor()
     c.execute("SELECT target_kcal, target_protein, target_fat, target_sugar FROM goals WHERE username=?", (st.session_state['username'],))
     goal = c.fetchone()
+    
+    if not goal:
+        # 혹시 목표가 없는 경우 기본값 부여
+        c.execute("INSERT INTO goals VALUES (?, 2000, 100, 50, 30)", (st.session_state['username'],))
+        conn.commit()
+        goal = (2000.0, 100.0, 50.0, 30.0)
     
     with st.sidebar.form("goal_form"):
         target_kcal = st.number_input("목표 칼로리 (kcal)", value=float(goal[0]))
@@ -163,7 +189,7 @@ def main_calendar_page():
         st.session_state['logged_in'] = False
         st.session_state['username'] = ""
         st.session_state['selected_date'] = None
-        st.query_params.clear() # 자동 로그인 정보 삭제
+        st.query_params.clear()
         st.rerun()
 
     st.title("📅 프로틴 렌즈 다이어리")
