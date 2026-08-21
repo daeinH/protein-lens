@@ -20,7 +20,7 @@ if 'username' not in st.session_state:
 if 'selected_date' not in st.session_state:
     st.session_state['selected_date'] = None
 
-# Streamlit Secrets에서 서버 API 키 자동 로드 (사용자 UI 없음)
+# Streamlit Secrets에서 서버 API 키 자동 로드
 try:
     GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 except:
@@ -43,7 +43,7 @@ def init_db():
 conn = init_db()
 
 # ---------------------------------------------------------
-# 3. AI 분석 함수
+# 3. AI 분석 함수 (gemini-3.6-flash 모델 고정)
 # ---------------------------------------------------------
 def clean_json_string(raw_string):
     raw_string = raw_string.strip()
@@ -57,7 +57,8 @@ def clean_json_string(raw_string):
 
 def analyze_food_image(image, api_key):
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-1.5-flash') 
+    # 지정하신 3.6-flash 모델로 고정
+    model = genai.GenerativeModel('gemini-3.6-flash') 
     
     prompt = """
     당신은 영양 분석 전문가입니다. 이 사진을 분석하여 다음 2단계 규칙에 따라 영양 성분을 알려주세요.
@@ -74,7 +75,8 @@ def analyze_food_image(image, api_key):
 
 def analyze_food_text(food_name, quantity, api_key):
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    # 지정하신 3.6-flash 모델로 고정
+    model = genai.GenerativeModel('gemini-3.6-flash')
     
     prompt = f"""
     당신은 영양학자입니다. 사용자가 '{food_name}'을(를) {quantity}개(또는 인분) 섭취했습니다. 
