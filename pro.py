@@ -9,25 +9,87 @@ import json
 import re
 
 # ---------------------------------------------------------
-# 1. 앱 기본 설정, CSS 모바일 최적화 및 세션 초기화
+# 1. 앱 기본 설정, PC/모바일 반응형 CSS 분리 및 세션 초기화
 # ---------------------------------------------------------
 st.set_page_config(page_title="Protein Lens", page_icon="🥗", layout="wide")
 
-# 모바일 한 화면에 맞추기 위한 여백 및 글자 크기 조정 CSS
+# PC와 모바일을 완전 분리하는 미디어 쿼리 CSS 적용
 st.markdown("""
     <style>
-    /* 전체 여백 최소화 */
-    .block-container {
-        padding-top: 1rem !important;
-        padding-bottom: 0.5rem !important;
-        padding-left: 0.5rem !important;
-        padding-right: 0.5rem !important;
-    }
-    /* 모바일 반응형 제목 크기 */
-    @media (max-width: 600px) {
+    /* 1. PC/데스크톱 화면용 스타일 (769px 이상) */
+    @media (min-width: 769px) {
+        .block-container {
+            padding-top: 2rem !important;
+            padding-bottom: 2rem !important;
+            padding-left: 2rem !important;
+            padding-right: 2rem !important;
+        }
         h1, h2 {
+            font-size: 1.8rem !important;
+            margin-bottom: 0.5rem !important;
+        }
+        .fc {
+            height: 620px !important; /* PC에서는 넓고 시원하게 표시 */
+        }
+        .fc-toolbar-title {
             font-size: 1.4rem !important;
+        }
+        .fc-daygrid-day-number {
+            font-size: 0.95rem !important;
+            font-weight: bold !important;
+            color: inherit !important; /* 다크/라이트 테마 자동 적응 */
+        }
+        .fc-col-header-cell-cushion {
+            font-size: 1.0rem !important;
+            color: inherit !important;
+        }
+        .fc-event-title {
+            font-size: 0.85rem !important;
+            font-weight: bold !important;
+        }
+    }
+
+    /* 2. 모바일 화면용 스타일 (768px 이하) */
+    @media (max-width: 768px) {
+        .block-container {
+            padding-top: 0.8rem !important;
+            padding-bottom: 0.5rem !important;
+            padding-left: 0.4rem !important;
+            padding-right: 0.4rem !important;
+        }
+        h1, h2 {
+            font-size: 1.3rem !important;
+            margin-top: 0rem !important;
             margin-bottom: 0.2rem !important;
+            line-height: 1.2 !important;
+        }
+        .fc {
+            height: 410px !important; /* 모바일 한 화면에 딱 맞는 높이 */
+        }
+        .fc-toolbar-title {
+            font-size: 1.0rem !important;
+        }
+        .fc-button {
+            padding: 0.2rem 0.4rem !important;
+            font-size: 0.75rem !important;
+        }
+        .fc-daygrid-day-number {
+            font-size: 0.8rem !important;
+            font-weight: bold !important;
+            color: inherit !important;
+            padding: 2px !important;
+        }
+        .fc-col-header-cell-cushion {
+            font-size: 0.75rem !important;
+            color: inherit !important;
+            padding: 1px !important;
+        }
+        .fc-daygrid-day-frame {
+            min-height: 45px !important;
+        }
+        .fc-event-title {
+            font-size: 0.65rem !important;
+            font-weight: bold !important;
         }
     }
     </style>
@@ -213,8 +275,7 @@ def view_calendar():
         st.query_params.clear()
         st.rerun()
 
-    # 모바일용 컴팩트 헤더 적용
-    st.markdown("<h2 style='margin-top:-10px; margin-bottom: 2px;'>📅 프로틴 렌즈 다이어리</h2>", unsafe_allow_html=True)
+    st.title("📅 프로틴 렌즈 다이어리")
     
     allowed_dates = get_allowed_dates()
     if len(allowed_dates) > 1:
@@ -237,26 +298,14 @@ def view_calendar():
             
         calendar_events.append({"title": title, "start": date_record, "color": color})
 
-    # 모바일 한 화면에 쏙 들어오도록 높이(height) 및 CSS 반응형 조정
     calendar_options = {
         "headerToolbar": {"left": "prev,next today", "center": "title", "right": ""},
         "initialView": "dayGridMonth",
         "buttonText": {"today": "오늘"},
         "selectable": True,
-        "height": 380,  # 모바일 화면 높이에 맞춘 고정 높이
     }
     
-    custom_css = """
-        .fc { font-size: 0.75rem !important; }
-        .fc-toolbar-title { font-size: 1.0rem !important; }
-        .fc-button { padding: 0.15rem 0.3rem !important; font-size: 0.75rem !important; }
-        .fc-col-header-cell-cushion { padding: 1px !important; color: #ffffff !important; }
-        .fc-daygrid-day-number { color: #ffffff !important; font-weight: bold; padding: 2px !important; }
-        .fc-daygrid-day-frame { min-height: 42px !important; }
-        .fc-event-title { font-size: 0.65rem !important; font-weight: bold; }
-    """
-    
-    cal_result = calendar(events=calendar_events, options=calendar_options, custom_css=custom_css)
+    cal_result = calendar(events=calendar_events, options=calendar_options)
     
     if cal_result.get("dateClick"):
         raw_date = cal_result["dateClick"]["date"]
@@ -359,107 +408,4 @@ def view_detail():
                         food_names.append(fn)
                         quantities.append(q)
                     
-                    if st.form_submit_button("일괄 AI 계산 및 저장하기"):
-                        if not GEMINI_API_KEY:
-                            st.error("서버에 API 키가 설정되지 않았습니다. 관리자에게 문의하세요.")
-                        else:
-                            added_count = 0
-                            c = conn.cursor()
-                            with st.spinner("AI가 음식 정보를 검색하고 영양 성분을 계산 중입니다..."):
-                                try:
-                                    for fn, q in zip(food_names, quantities):
-                                        if fn.strip() != "":
-                                            result = analyze_food_text(fn, q, GEMINI_API_KEY)
-                                            c.execute("INSERT INTO meals (username, date, meal_type, food_name, quantity, kcal, protein, fat, sugar) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                                                      (st.session_state['username'], date_str, meal_type, fn, q, result.get('kcal', 0), result.get('protein', 0), result.get('fat', 0), result.get('sugar', 0)))
-                                            added_count += 1
-                                    if added_count > 0:
-                                        conn.commit()
-                                        st.success(f"총 {added_count}개의 음식이 성공적으로 기록되었습니다!")
-                                        st.session_state[f'num_rows_{meal_type}'] = 1
-                                        st.rerun()
-                                    else:
-                                        st.warning("입력된 음식이 없습니다.")
-                                except Exception as e:
-                                    st.error(f"분석 중 오류가 발생했습니다. (에러: {e})")
-
-    st.divider()
-    st.subheader(f"📊 오늘 섭취 기록 및 편집")
-    c = conn.cursor()
-    c.execute("SELECT id, meal_type, food_name, quantity, kcal, protein, fat, sugar FROM meals WHERE username=? AND date=?", (st.session_state['username'], date_str))
-    records = c.fetchall()
-    
-    if records:
-        df = pd.DataFrame(records, columns=["ID", "끼니", "음식", "수량", "칼로리", "단백질", "지방", "당류"])
-        st.info("💡 표의 내용을 더블클릭하여 직접 숫자를 수정하거나 지울 수 있습니다. 변경 후 반드시 저장 버튼을 누르세요.")
-        
-        edited_df = st.data_editor(
-            df,
-            column_config={
-                "ID": None, 
-                "끼니": st.column_config.SelectboxColumn("끼니", options=["아침", "점심", "저녁", "간식"], required=True),
-                "음식": st.column_config.TextColumn("음식", required=True),
-            },
-            disabled=["ID"],
-            num_rows="dynamic",
-            use_container_width=True,
-            key="daily_meals_editor"
-        )
-        
-        if st.button("💾 변경사항 DB에 완전 저장하기", type="primary"):
-            changes = st.session_state["daily_meals_editor"]
-            for row_idx in changes.get("deleted_rows", []):
-                del_id = int(df.iloc[row_idx]["ID"])
-                c.execute("DELETE FROM meals WHERE id=?", (del_id,))
-                
-            for row_idx, col_changes in changes.get("edited_rows", {}).items():
-                edit_id = int(df.iloc[row_idx]["ID"])
-                for col_name, new_val in col_changes.items():
-                    db_col_map = {"끼니":"meal_type", "음식":"food_name", "수량":"quantity", "칼로리":"kcal", "단백질":"protein", "지방":"fat", "당류":"sugar"}
-                    db_col = db_col_map[col_name]
-                    c.execute(f"UPDATE meals SET {db_col}=? WHERE id=?", (new_val, edit_id))
-                    
-            for added in changes.get("added_rows", []):
-                meal_type = added.get("끼니", "간식")
-                food_name = added.get("음식", "새 음식")
-                quantity = added.get("수량", 1.0)
-                kcal = added.get("칼로리", 0.0)
-                protein = added.get("단백질", 0.0)
-                fat = added.get("지방", 0.0)
-                sugar = added.get("당류", 0.0)
-                c.execute("INSERT INTO meals (username, date, meal_type, food_name, quantity, kcal, protein, fat, sugar) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                          (st.session_state['username'], date_str, meal_type, food_name, quantity, kcal, protein, fat, sugar))
-                          
-            conn.commit()
-            st.success("변경사항이 성공적으로 저장되었습니다!")
-            st.rerun()
-
-        for col in ["칼로리", "단백질", "지방", "당류"]:
-            edited_df[col] = pd.to_numeric(edited_df[col], errors='coerce').fillna(0)
-            
-        totals = edited_df[["칼로리", "단백질", "지방", "당류"]].sum()
-        c.execute("SELECT target_kcal, target_protein, target_fat, target_sugar FROM goals WHERE username=?", (st.session_state['username'],))
-        goals = c.fetchone()
-        
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("총 칼로리", f"{totals['칼로리']:.1f} kcal", f"{(totals['칼로리'] - goals[0]):.1f} kcal (목표대비)", delta_color="inverse")
-        col2.metric("총 단백질", f"{totals['단백질']:.1f} g", f"{(totals['단백질'] - goals[1]):.1f} g (목표대비)")
-        col3.metric("총 지방", f"{totals['지방']:.1f} g", f"{(totals['지방'] - goals[2]):.1f} g")
-        col4.metric("총 당류", f"{totals['당류']:.1f} g", f"{(totals['당류'] - goals[3]):.1f} g", delta_color="inverse")
-    else:
-        st.info("아직 기록된 식단이 없습니다.")
-
-# ---------------------------------------------------------
-# 5. 라우팅
-# ---------------------------------------------------------
-
-page_login = st.Page(view_login, title="로그인", url_path="login")
-page_calendar = st.Page(view_calendar, title="달력", url_path="calendar", default=True)
-page_detail = st.Page(view_detail, title="식단 기록", url_path="detail")
-
-if not st.session_state.get('logged_in', False):
-    pg = st.navigation([page_login], position="hidden")
-else:
-    pg = st.navigation([page_calendar, page_detail], position="hidden")
-
-pg.run()
+                    if st.
