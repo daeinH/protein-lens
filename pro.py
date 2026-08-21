@@ -224,7 +224,6 @@ def view_calendar():
             del st.query_params["user"]
         st.rerun()
 
-    # 정상적인 제목 컴포넌트로 원상복구
     st.title("📅 프로틴 렌즈 다이어리")
     
     allowed_dates = get_allowed_dates()
@@ -248,7 +247,6 @@ def view_calendar():
             
         calendar_events.append({"title": title, "start": date_record, "color": color})
 
-    # PC/모바일 모두 유연하게 대응하도록 고정 높이(height) 대신 contentHeight: "auto" 적용
     calendar_options = {
         "headerToolbar": {"left": "prev,next today", "center": "title", "right": ""},
         "initialView": "dayGridMonth",
@@ -257,9 +255,11 @@ def view_calendar():
         "contentHeight": "auto", 
     }
     
+    # [수정됨] 다크모드/라이트모드 자동 대응을 위해 글씨색(color)을 inherit으로 변경
     custom_css = """
         .fc-event-title { font-weight: bold; } 
-        .fc-daygrid-day-number { color: black; }
+        .fc-daygrid-day-number { color: inherit !important; text-decoration: none; }
+        .fc-col-header-cell-cushion { color: inherit !important; text-decoration: none; }
     """
     
     cal_result = calendar(events=calendar_events, options=calendar_options, custom_css=custom_css)
