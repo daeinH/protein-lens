@@ -14,17 +14,21 @@ st.set_page_config(page_title="Protein Lens", page_icon="🥗", layout="wide")
 
 st.markdown("""
     <style>
+    /* 기본 (PC) 여백 설정 */
     .block-container {
         padding-top: 2rem !important;
         padding-bottom: 2rem !important;
     }
+    /* 모바일 화면 (가로 해상도 768px 이하) 전용 설정 */
     @media (max-width: 768px) {
         .block-container {
-            padding-top: 1rem !important;
+            /* 상단 바에 글씨가 가려지지 않도록 안전 여백 2.5rem 확보 */
+            padding-top: 2.5rem !important; 
             padding-left: 0.5rem !important;
             padding-right: 0.5rem !important;
+            padding-bottom: 1rem !important;
         }
-        h1 { font-size: 1.5rem !important; padding-bottom: 0 !important; }
+        h1, h2 { font-size: 1.5rem !important; padding-bottom: 0 !important; padding-top: 0 !important; }
         .fc { font-size: 0.75rem !important; }
         .fc-toolbar-title { font-size: 1.1rem !important; }
         .fc-button { padding: 0.2rem 0.4rem !important; font-size: 0.8rem !important; }
@@ -171,10 +175,9 @@ def view_login():
                         st.error(f"회원가입 처리 중 오류 발생: {e}")
 
 def view_calendar():
-    # 모바일용 컴팩트 헤더
-    st.markdown("<h2 style='margin-top:-10px; margin-bottom: 2px;'>📅 프로틴 렌즈 다이어리</h2>", unsafe_allow_html=True)
+    # 잘리던 음수 마진(-10px)을 제거하고 정상적으로 렌더링되도록 수정
+    st.markdown("<h2 style='margin-bottom: 2px;'>📅 프로틴 렌즈 다이어리</h2>", unsafe_allow_html=True)
     
-    # [수정] 사이드바에 있던 기능을 메인 화면의 Expander로 이동
     c = conn.cursor()
     c.execute("SELECT target_kcal, target_protein, target_fat, target_sugar FROM goals WHERE username=?", (st.session_state['username'],))
     goal = c.fetchone()
