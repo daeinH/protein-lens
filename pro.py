@@ -7,11 +7,18 @@ import google.generativeai as genai
 from PIL import Image
 import json
 import re
+import extra_streamlit_components as stx
 
 # ---------------------------------------------------------
-# 1. 앱 기본 설정 및 세션 초기화
+# 1. 앱 기본 설정, 세션 및 쿠키 초기화
 # ---------------------------------------------------------
 st.set_page_config(page_title="Protein Lens", page_icon="🥗", layout="wide")
+
+@st.cache_resource
+def get_cookie_manager():
+    return stx.CookieManager()
+
+cookie_manager = get_cookie_manager()
 
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
@@ -19,14 +26,25 @@ if 'username' not in st.session_state:
     st.session_state['username'] = ""
 if 'selected_date' not in st.session_state:
     st.session_state['selected_date'] = None
-if 'gemini_api_key' not in st.session_state:
-    st.session_state['gemini_api_key'] = ""
+
+# 자동 로그인 토큰 확인 (쿠키에 정보가 있으면 자동 로그인 처리)
+stored_user = cookie_manager.get(cookie="remember_user")
+if stored_user and not st.session_state['logged_in']:
+    st.session_state['logged_in'] = True
+    st.session_state['username'] = stored_user
+
+# Streamlit Secrets에서 서버 API 키 자동 로드
+try:
+    GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
+except:
+    GEMINI_API_KEY = ""
 
 # ---------------------------------------------------------
-# 2. 데이터베이스 셋업 (SQLite)
+# 2. 데이터베이스 셋업 (SQLite 복구)
 # ---------------------------------------------------------
 def init_db():
-    conn = sqlite3.connect('protein_lens.db')
+    # check_same_thread=False 를 추가하여 Streamlit 환경에서 안정적으로 동작하게 함
+    conn = sqlite3.connect('protein_lens.db', check_same_thread=False)
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS goals (username TEXT, target_kcal REAL, target_protein REAL, target_fat REAL, target_sugar REAL)''')
@@ -39,10 +57,9 @@ def init_db():
 conn = init_db()
 
 # ---------------------------------------------------------
-# 3. AI 분석 함수 (실제 Gemini API 연동)
+# 3. AI 분석 함수 (gemini-3.6-flash 고정)
 # ---------------------------------------------------------
 def clean_json_string(raw_string):
-    """AI가 반환한 텍스트에서 마크다운(```json)을 제거하고 순수 JSON 문자열만 추출"""
     raw_string = raw_string.strip()
     if raw_string.startswith("```json"):
         raw_string = raw_string[7:]
@@ -54,8 +71,7 @@ def clean_json_string(raw_string):
 
 def analyze_food_image(image, api_key):
     genai.configure(api_key=api_key)
-    # 이미지 및 텍스트 동시 분석에 적합한 최신 모델
-    model = genai.GenerativeModel('gemini-1.5-flash') 
+    model = genai.GenerativeModel('gemini-3.6-flash') 
     
     prompt = """
     당신은 영양 분석 전문가입니다. 이 사진을 분석하여 다음 2단계 규칙에 따라 영양 성분을 알려주세요.
@@ -65,14 +81,13 @@ def analyze_food_image(image, api_key):
     반드시 아래 JSON 형식으로만 대답하세요. 다른 설명이나 마크다운 기호는 절대 넣지 마세요:
     {"food_name": "음식명(간단히)", "kcal": 0, "protein": 0, "fat": 0, "sugar": 0}
     """
-    
     response = model.generate_content([prompt, image])
     cleaned_json = clean_json_string(response.text)
     return json.loads(cleaned_json)
 
 def analyze_food_text(food_name, quantity, api_key):
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    model = genai.GenerativeModel('gemini-3.6-flash')
     
     prompt = f"""
     당신은 영양학자입니다. 사용자가 '{food_name}'을(를) {quantity}개(또는 인분) 섭취했습니다. 
@@ -82,13 +97,12 @@ def analyze_food_text(food_name, quantity, api_key):
     반드시 아래 JSON 형식으로만 대답하세요. 다른 설명이나 마크다운 기호는 절대 넣지 마세요:
     {{"kcal": 0, "protein": 0, "fat": 0, "sugar": 0}}
     """
-    
     response = model.generate_content(prompt)
     cleaned_json = clean_json_string(response.text)
     return json.loads(cleaned_json)
 
 # ---------------------------------------------------------
-# 4. 로그인 / 회원가입 화면
+# 4. 로그인 / 회원가입 화면 (자동 로그인 적용)
 # ---------------------------------------------------------
 def login_page():
     st.title("🥗 Protein Lens 로그인")
@@ -97,12 +111,19 @@ def login_page():
     with tab1:
         login_id = st.text_input("아이디", key="login_id")
         login_pw = st.text_input("비밀번호", type="password", key="login_pw")
+        auto_login = st.checkbox("자동 로그인 유지") # 체크박스 추가
+        
         if st.button("로그인"):
             c = conn.cursor()
             c.execute("SELECT * FROM users WHERE username=? AND password=?", (login_id, login_pw))
             if c.fetchone():
                 st.session_state['logged_in'] = True
                 st.session_state['username'] = login_id
+                
+                # 자동 로그인 체크 시 쿠키에 30일간 아이디 저장
+                if auto_login:
+                    cookie_manager.set("remember_user", login_id, expires_at=datetime.datetime.now() + datetime.timedelta(days=30))
+                
                 st.rerun()
             else:
                 st.error("아이디나 비밀번호가 틀렸습니다.")
@@ -125,19 +146,6 @@ def login_page():
 # ---------------------------------------------------------
 def main_calendar_page():
     st.sidebar.title(f"👋 {st.session_state['username']}님 환영합니다!")
-    
-    # --- Gemini API 키 설정 ---
-    st.sidebar.subheader("🔑 API 키 설정")
-    api_key_input = st.sidebar.text_input("Google Gemini API Key 입력", type="password", value=st.session_state['gemini_api_key'])
-    if api_key_input != st.session_state['gemini_api_key']:
-        st.session_state['gemini_api_key'] = api_key_input
-    
-    if not st.session_state['gemini_api_key']:
-        st.sidebar.warning("⚠️ AI 기능을 사용하려면 API 키를 입력하세요.")
-    else:
-        st.sidebar.success("✅ API 키 적용됨")
-
-    st.sidebar.divider()
 
     # --- 목표 설정 섹션 ---
     st.sidebar.subheader("🎯 나의 하루 목표")
@@ -157,9 +165,13 @@ def main_calendar_page():
             st.success("목표가 업데이트 되었습니다!")
             st.rerun()
 
-    if st.sidebar.button("로그아웃"):
+    # --- 로그아웃 버튼 로직 ---
+    st.sidebar.divider()
+    if st.sidebar.button("🚪 로그아웃", type="primary"):
         st.session_state['logged_in'] = False
+        st.session_state['username'] = ""
         st.session_state['selected_date'] = None
+        cookie_manager.delete("remember_user") # 쿠키 완전 삭제
         st.rerun()
 
     st.title("📅 프로틴 렌즈 다이어리")
@@ -201,7 +213,6 @@ def main_calendar_page():
     custom_css = ".fc-event-title { font-weight: bold; } .fc-daygrid-day-number { color: black; }"
     cal_result = calendar(events=calendar_events, options=calendar_options, custom_css=custom_css)
     
-    # --- 날짜 클릭 시 보정 로직 ---
     if cal_result.get("dateClick"):
         raw_date = cal_result["dateClick"]["date"]
         if "T" in raw_date:
@@ -265,12 +276,12 @@ def day_detail_page():
             if uploaded_image is not None:
                 st.image(uploaded_image, width=300)
                 if st.button(f"{meal_type} 사진으로 분석하기", key=f"btn_analyze_{meal_type}"):
-                    if not st.session_state['gemini_api_key']:
-                        st.error("왼쪽 사이드바에서 Gemini API 키를 먼저 입력해주세요!")
+                    if not GEMINI_API_KEY:
+                        st.error("서버에 API 키가 설정되지 않았습니다. 관리자에게 문의하세요.")
                     else:
                         with st.spinner("AI가 이미지를 꼼꼼히 분석 중입니다..."):
                             try:
-                                result = analyze_food_image(uploaded_image, st.session_state['gemini_api_key'])
+                                result = analyze_food_image(uploaded_image, GEMINI_API_KEY)
                                 c = conn.cursor()
                                 c.execute("INSERT INTO meals (username, date, meal_type, food_name, quantity, kcal, protein, fat, sugar) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                                           (st.session_state['username'], date_str, meal_type, result['food_name'], 1.0, result['kcal'], result['protein'], result['fat'], result['sugar']))
@@ -278,7 +289,7 @@ def day_detail_page():
                                 st.success("사진 분석 및 저장 완료!")
                                 st.rerun()
                             except Exception as e:
-                                st.error(f"분석 중 오류가 발생했습니다. API 키가 정확한지 확인해주세요. (에러: {e})")
+                                st.error(f"분석 중 오류가 발생했습니다. (에러: {e})")
 
             elif input_mode == "✍️ 텍스트 입력 (AI 자동계산)":
                 if f'num_rows_{meal_type}' not in st.session_state:
@@ -290,10 +301,8 @@ def day_detail_page():
 
                 with st.form(f"form_{meal_type}"):
                     st.caption("음식 이름과 수량을 적으면 실제 AI가 영양성분을 분석하여 저장합니다.")
-                    
                     food_names = []
                     quantities = []
-                    
                     for r in range(st.session_state[f'num_rows_{meal_type}']):
                         col1, col2 = st.columns([3, 1])
                         fn = col1.text_input(f"음식 이름 {r+1}", placeholder="예: 베지밀 고단백 두유", key=f"fn_{meal_type}_{r}")
@@ -302,8 +311,8 @@ def day_detail_page():
                         quantities.append(q)
                     
                     if st.form_submit_button("일괄 AI 계산 및 저장하기"):
-                        if not st.session_state['gemini_api_key']:
-                            st.error("왼쪽 사이드바에서 Gemini API 키를 먼저 입력해주세요!")
+                        if not GEMINI_API_KEY:
+                            st.error("서버에 API 키가 설정되지 않았습니다. 관리자에게 문의하세요.")
                         else:
                             added_count = 0
                             c = conn.cursor()
@@ -311,11 +320,10 @@ def day_detail_page():
                                 try:
                                     for fn, q in zip(food_names, quantities):
                                         if fn.strip() != "":
-                                            result = analyze_food_text(fn, q, st.session_state['gemini_api_key'])
+                                            result = analyze_food_text(fn, q, GEMINI_API_KEY)
                                             c.execute("INSERT INTO meals (username, date, meal_type, food_name, quantity, kcal, protein, fat, sugar) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                                                       (st.session_state['username'], date_str, meal_type, fn, q, result.get('kcal', 0), result.get('protein', 0), result.get('fat', 0), result.get('sugar', 0)))
                                             added_count += 1
-                                            
                                     if added_count > 0:
                                         conn.commit()
                                         st.success(f"총 {added_count}개의 음식이 성공적으로 기록되었습니다!")
@@ -326,9 +334,6 @@ def day_detail_page():
                                 except Exception as e:
                                     st.error(f"분석 중 오류가 발생했습니다. (에러: {e})")
 
-    # ---------------------------------------------------------
-    # 하루 섭취 기록 요약 및 편집
-    # ---------------------------------------------------------
     st.divider()
     st.subheader(f"📊 오늘 섭취 기록 및 편집")
     c = conn.cursor()
