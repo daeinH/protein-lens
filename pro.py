@@ -171,7 +171,10 @@ def view_login():
                         st.error(f"회원가입 처리 중 오류 발생: {e}")
 
 def view_calendar():
-    st.sidebar.title(f"👋 {st.session_state['username']}님 환영합니다!")
+    # 모바일용 컴팩트 헤더
+    st.markdown("<h2 style='margin-top:-10px; margin-bottom: 2px;'>📅 프로틴 렌즈 다이어리</h2>", unsafe_allow_html=True)
+    
+    # [수정] 사이드바에 있던 기능을 메인 화면의 Expander로 이동
     c = conn.cursor()
     c.execute("SELECT target_kcal, target_protein, target_fat, target_sugar FROM goals WHERE username=?", (st.session_state['username'],))
     goal = c.fetchone()
@@ -179,30 +182,34 @@ def view_calendar():
         c.execute("INSERT INTO goals VALUES (?, 2000, 100, 50, 30)", (st.session_state['username'],))
         conn.commit()
         goal = (2000.0, 100.0, 50.0, 30.0)
-    
-    st.sidebar.subheader("🎯 나의 하루 목표")
-    with st.sidebar.form("goal_form"):
-        target_kcal = st.number_input("목표 칼로리 (kcal)", value=float(goal[0]))
-        target_protein = st.number_input("목표 단백질 (g)", value=float(goal[1]))
-        target_fat = st.number_input("목표 지방 (g)", value=float(goal[2]))
-        target_sugar = st.number_input("목표 당류 (g)", value=float(goal[3]))
-        if st.form_submit_button("목표 저장"):
-            c.execute("UPDATE goals SET target_kcal=?, target_protein=?, target_fat=?, target_sugar=? WHERE username=?",
-                      (target_kcal, target_protein, target_fat, target_sugar, st.session_state['username']))
-            conn.commit()
-            st.success("목표가 업데이트 되었습니다!")
+
+    with st.expander(f"👋 {st.session_state['username']}님 환영합니다! (⚙️ 목표 설정 및 로그아웃)"):
+        st.subheader("🎯 나의 하루 목표 수정")
+        with st.form("goal_form"):
+            col1, col2 = st.columns(2)
+            with col1:
+                target_kcal = st.number_input("목표 칼로리 (kcal)", value=float(goal[0]))
+                target_protein = st.number_input("목표 단백질 (g)", value=float(goal[1]))
+            with col2:
+                target_fat = st.number_input("목표 지방 (g)", value=float(goal[2]))
+                target_sugar = st.number_input("목표 당류 (g)", value=float(goal[3]))
+                
+            if st.form_submit_button("목표 저장"):
+                c.execute("UPDATE goals SET target_kcal=?, target_protein=?, target_fat=?, target_sugar=? WHERE username=?",
+                          (target_kcal, target_protein, target_fat, target_sugar, st.session_state['username']))
+                conn.commit()
+                st.success("목표가 업데이트 되었습니다!")
+                st.rerun()
+
+        st.divider()
+        if st.button("🚪 로그아웃", type="primary", use_container_width=True):
+            st.session_state['logged_in'] = False
+            st.session_state['username'] = ""
+            st.session_state['selected_date'] = None
+            if "user" in st.query_params:
+                del st.query_params["user"]
             st.rerun()
 
-    st.sidebar.divider()
-    if st.sidebar.button("🚪 로그아웃", type="primary"):
-        st.session_state['logged_in'] = False
-        st.session_state['username'] = ""
-        st.session_state['selected_date'] = None
-        if "user" in st.query_params:
-            del st.query_params["user"]
-        st.rerun()
-
-    st.title("📅 프로틴 렌즈 다이어리")
     allowed_dates = get_allowed_dates()
     if len(allowed_dates) > 1:
         st.caption("🌙 현재 새벽 시간입니다. 어제/오늘 날짜 식단 기록이 가능합니다.")
@@ -281,7 +288,6 @@ def view_detail():
             meal_type = meal_types[i]
             st.subheader(f"{meal_type} 기록하기")
             
-            # 카메라 모드와 업로드 모드를 하나로 통합
             input_mode = st.radio(
                 "입력 방식", 
                 ["📷 사진 촬영 및 업로드", "✍️ 텍스트 입력 (AI 자동계산)"], 
@@ -293,7 +299,6 @@ def view_detail():
             
             if input_mode == "📷 사진 촬영 및 업로드":
                 st.caption("💡 스마트폰(아이폰/갤럭시)에서 아래 버튼을 누르면 기본 카메라 앱이 실행되거나 사진첩을 열 수 있습니다.")
-                # 파일 업로더가 모바일 기기에서는 카메라/사진첩 선택 창을 띄우는 네이티브 트리거 역할을 합니다.
                 file_photo = st.file_uploader(f"{meal_type} 음식 사진 첨부", type=["jpg", "png", "jpeg"], key=f"file_{meal_type}")
                 
                 if file_photo:
