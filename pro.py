@@ -224,10 +224,15 @@ def main_calendar_page():
         calendar_events.append({"title": title, "start": date_record, "color": color})
 
     calendar_options = {
-        "headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"},
-        "initialView": "dayGridMonth",
-        "selectable": True,
-    }
+    # right에서 dayGridMonth(month 버튼)를 제거하여 깔끔하게 정돈
+    "headerToolbar": {"left": "prev,next today", "center": "title", "right": ""},
+    "initialView": "dayGridMonth",
+    "buttonText": {
+        "today": "오늘"  # 영어 'today'를 한글 '오늘'로 변경
+    },
+    "selectable": True,
+}
+    
     custom_css = ".fc-event-title { font-weight: bold; } .fc-daygrid-day-number { color: black; }"
     cal_result = calendar(events=calendar_events, options=calendar_options, custom_css=custom_css)
     
