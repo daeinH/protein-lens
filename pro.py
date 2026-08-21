@@ -8,26 +8,37 @@ from PIL import Image
 import json
 
 # ---------------------------------------------------------
-# 1. 앱 기본 설정, CSS 모바일 최적화 및 세션 초기화
+# 1. 앱 기본 설정, 모바일/PC 반응형 CSS 및 세션 초기화
 # ---------------------------------------------------------
 st.set_page_config(page_title="Protein Lens", page_icon="🥗", layout="wide")
 
-# 모바일 한 화면에 맞추기 위한 여백 및 글자 크기 조정 CSS
+# PC와 모바일 화면을 구분하여 다르게 렌더링하는 반응형 CSS
 st.markdown("""
     <style>
-    /* 전체 여백 최소화 */
+    /* 기본 (PC) 여백 설정 */
     .block-container {
-        padding-top: 1rem !important;
-        padding-bottom: 0.5rem !important;
-        padding-left: 0.5rem !important;
-        padding-right: 0.5rem !important;
+        padding-top: 2rem !important;
+        padding-bottom: 2rem !important;
     }
-    /* 모바일 반응형 제목 크기 */
-    @media (max-width: 600px) {
-        h1, h2 {
-            font-size: 1.4rem !important;
-            margin-bottom: 0.2rem !important;
+    
+    /* 모바일 화면 (가로 해상도 768px 이하) 전용 설정 */
+    @media (max-width: 768px) {
+        .block-container {
+            padding-top: 1rem !important;
+            padding-left: 0.5rem !important;
+            padding-right: 0.5rem !important;
         }
+        /* 모바일 제목 크기 축소 */
+        h1 { font-size: 1.5rem !important; padding-bottom: 0 !important; }
+        
+        /* 모바일 캘린더 내부 글씨 및 높이 최적화 */
+        .fc { font-size: 0.75rem !important; }
+        .fc-toolbar-title { font-size: 1.1rem !important; }
+        .fc-button { padding: 0.2rem 0.4rem !important; font-size: 0.8rem !important; }
+        .fc-col-header-cell-cushion { padding: 2px !important; }
+        .fc-daygrid-day-number { padding: 2px !important; }
+        .fc-daygrid-day-frame { min-height: 50px !important; }
+        .fc-event-title { font-size: 0.65rem !important; }
     }
     </style>
 """, unsafe_allow_html=True)
@@ -213,8 +224,8 @@ def view_calendar():
             del st.query_params["user"]
         st.rerun()
 
-    # 모바일용 컴팩트 헤더 적용
-    st.markdown("<h2 style='margin-top:-10px; margin-bottom: 2px;'>📅 프로틴 렌즈 다이어리</h2>", unsafe_allow_html=True)
+    # 정상적인 제목 컴포넌트로 원상복구
+    st.title("📅 프로틴 렌즈 다이어리")
     
     allowed_dates = get_allowed_dates()
     if len(allowed_dates) > 1:
@@ -237,23 +248,18 @@ def view_calendar():
             
         calendar_events.append({"title": title, "start": date_record, "color": color})
 
-    # 모바일 한 화면에 쏙 들어오도록 높이(height) 및 CSS 반응형 조정
+    # PC/모바일 모두 유연하게 대응하도록 고정 높이(height) 대신 contentHeight: "auto" 적용
     calendar_options = {
         "headerToolbar": {"left": "prev,next today", "center": "title", "right": ""},
         "initialView": "dayGridMonth",
         "buttonText": {"today": "오늘"},
         "selectable": True,
-        "height": 380,
+        "contentHeight": "auto", 
     }
     
     custom_css = """
-        .fc { font-size: 0.75rem !important; }
-        .fc-toolbar-title { font-size: 1.0rem !important; }
-        .fc-button { padding: 0.15rem 0.3rem !important; font-size: 0.75rem !important; }
-        .fc-col-header-cell-cushion { padding: 1px !important; color: #ffffff !important; }
-        .fc-daygrid-day-number { color: #ffffff !important; font-weight: bold; padding: 2px !important; }
-        .fc-daygrid-day-frame { min-height: 42px !important; }
-        .fc-event-title { font-size: 0.65rem !important; font-weight: bold; }
+        .fc-event-title { font-weight: bold; } 
+        .fc-daygrid-day-number { color: black; }
     """
     
     cal_result = calendar(events=calendar_events, options=calendar_options, custom_css=custom_css)
